@@ -1,0 +1,1162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Latent Space Fight Club: Isometric Engine</title>
+    <style>
+        :root {
+            --bg-color: #1a1a2e;
+            --ui-bg: rgba(22, 33, 62, 0.95);
+            --ui-border: #0f3460;
+            --accent: #e94560;
+            --player-color: #3498db;
+            --enemy-color: #e67e22;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            touch-action: none;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* UI Overlays */
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: var(--ui-bg);
+            z-index: 10;
+            padding: 20px;
+            box-sizing: border-box;
+            text-align: center;
+        }
+
+        /* --- HUD ELEMENTS --- */
+        #oc-hud {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: none;
+            align-items: center;
+            gap: 10px;
+            z-index: 5;
+            background: rgba(0,0,0,0.5);
+            padding: 5px 15px;
+            border-radius: 30px;
+            backdrop-filter: blur(2px);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .hud-slots { display: flex; gap: 8px; }
+
+        .oc-icon {
+            width: 40px; height: 40px; border-radius: 50%;
+            background: rgba(255,255,255,0.1); border: 2px solid #555;
+            overflow: hidden; position: relative; transition: transform 0.2s;
+        }
+        
+        .oc-icon img { width: 100%; height: 100%; object-fit: cover; }
+        .lead-star { position: absolute; top: 0; right: 0; color: #f1c40f; font-size: 0.8rem; text-shadow: 0 1px 2px black; }
+        
+        .hud-expand-btn {
+            background: #34495e; color: white; border: none; width: 30px; height: 30px;
+            border-radius: 50%; cursor: pointer; font-weight: bold;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .hud-expand-btn:hover { background: var(--accent); }
+
+        /* Team Drawer */
+        #team-drawer {
+            position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+            width: 90%; max-width: 400px; background: var(--ui-bg); border: 1px solid var(--ui-border);
+            border-radius: 8px; padding: 15px; display: none; z-index: 20;
+            flex-direction: column; gap: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+        }
+
+        .team-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+            gap: 10px; max-height: 300px; overflow-y: auto; padding: 5px;
+        }
+
+        .team-member {
+            background: rgba(255,255,255,0.05); border-radius: 8px; padding: 5px;
+            text-align: center; cursor: pointer; border: 2px solid transparent; transition: all 0.2s; position: relative;
+        }
+        
+        .team-member.active { border-color: #2ecc71; background: rgba(46, 204, 113, 0.1); }
+        .team-member.lead { border-color: #f1c40f; }
+        
+        .team-member img { width: 40px; height: 40px; object-fit: contain; }
+        .team-member-name { font-size: 0.7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+        .set-lead-btn { position: absolute; top: -5px; right: -5px; background: #333; color: #555; border-radius: 50%; width: 20px; height: 20px; font-size: 0.8rem; border: 1px solid #777; cursor: pointer; display: flex; align-items: center; justify-content: center;}
+        .team-member.lead .set-lead-btn { color: #f1c40f; border-color: #f1c40f; background: #fff; }
+
+        /* Battle Switch Modal */
+        #switch-modal {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 80%; max-width: 350px; background: var(--ui-bg); border: 2px solid var(--ui-border);
+            border-radius: 12px; padding: 20px; z-index: 30; display: none; flex-direction: column; gap: 10px;
+        }
+        .switch-option {
+            display: flex; align-items: center; padding: 10px; background: rgba(255,255,255,0.1);
+            border-radius: 8px; cursor: pointer; border: 1px solid transparent;
+        }
+        .switch-option:hover { background: rgba(255,255,255,0.2); }
+        .switch-option img { width: 40px; height: 40px; margin-right: 15px; object-fit: contain; }
+        .switch-info { display: flex; flex-direction: column; text-align: left; }
+        .switch-hp { font-size: 0.8rem; color: #aaa; }
+
+        /* --- EXISTING STYLES --- */
+        #battle-ui { justify-content: space-between; padding: 10px; background: rgba(20, 20, 30, 0.8); backdrop-filter: blur(5px); }
+        .battle-header { width: 100%; display: flex; justify-content: space-between; margin-bottom: 10px; max-width: 600px; }
+        .health-box { background: rgba(0,0,0,0.6); padding: 15px; border-radius: 12px; width: 45%; border: 2px solid #555; box-shadow: 0 4px 6px rgba(0,0,0,0.3); transition: border-color 0.3s; position: relative; }
+        .level-badge { position: absolute; top: -10px; right: -10px; background: var(--accent); color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.9rem; border: 2px solid #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.5); }
+        .hp-bar-bg { width: 100%; height: 12px; background: #333; margin-top: 8px; border-radius: 6px; overflow: hidden; border: 1px solid #000; }
+        .hp-bar-fill { height: 100%; background: linear-gradient(90deg, #2ecc71, #27ae60); width: 100%; transition: width 0.4s cubic-bezier(0.25, 1, 0.5, 1); }
+        .combo-meter { color: #f1c40f; font-weight: 800; font-size: 1.1rem; margin-top: 5px; text-transform: uppercase; letter-spacing: 1px; }
+        #battle-log { flex-grow: 0; width: 100%; max-width: 600px; background: rgba(0,0,0,0.4); border-radius: 8px; margin: 10px 0; padding: 10px; height: 50px; display: flex; align-items: center; justify-content: center; overflow: hidden; font-size: 1.1rem; text-align: center; font-family: 'Courier New', monospace; border: 1px solid rgba(255,255,255,0.1); }
+        .log-entry { margin: 0; padding: 0; border: none; font-weight: bold; }
+        .log-win { color: #2ecc71; } .log-lose { color: #e74c3c; } .log-tie { color: #95a5a6; } .log-catch { color: #3498db; }
+        .battle-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; width: 100%; max-width: 600px; }
+        .move-btn { background: linear-gradient(to bottom, #34495e, #2c3e50); border: none; border-bottom: 4px solid #1a252f; color: white; padding: 15px 10px; border-radius: 8px; cursor: pointer; font-weight: bold; text-transform: uppercase; font-size: 0.9rem; width: 28%; transition: all 0.1s; box-shadow: 0 4px 6px rgba(0,0,0,0.2); }
+        .move-btn:active { transform: translateY(2px); border-bottom-width: 2px; } .move-btn:hover { filter: brightness(1.2); } .move-btn:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(1); }
+        
+        .btn-rock { border-bottom-color: #5d6d7e; background: linear-gradient(to bottom, #95a5a6, #7f8c8d); }
+        .btn-paper { border-bottom-color: #bdc3c7; background: linear-gradient(to bottom, #ecf0f1, #bdc3c7); color: #333; }
+        .btn-scissors { border-bottom-color: #c0392b; background: linear-gradient(to bottom, #e74c3c, #c0392b); }
+        .btn-lizard { border-bottom-color: #27ae60; background: linear-gradient(to bottom, #2ecc71, #27ae60); }
+        .btn-spock { border-bottom-color: #8e44ad; background: linear-gradient(to bottom, #9b59b6, #8e44ad); }
+        
+        .btn-catch { border-bottom-color: #2980b9; background: linear-gradient(to bottom, #3498db, #2980b9); width: 45%; } 
+        .btn-run { border-bottom-color: #f39c12; background: linear-gradient(to bottom, #f1c40f, #f39c12); width: 45%; color: #2c3e50; }
+        .btn-switch { border-bottom-color: #8e44ad; background: linear-gradient(to bottom, #9b59b6, #8e44ad); width: 100%; margin-top: 5px; }
+
+        #battle-scene { flex-grow: 2; display: flex; justify-content: space-around; align-items: center; width: 100%; max-width: 800px; position: relative; }
+        .battler { width: 220px; height: 220px; transition: transform 0.2s, filter 0.5s; z-index: 2; position: relative; }
+        .battler img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 5px 5px rgba(0,0,0,0.5)); }
+
+        @keyframes lunge-right { 0% { transform: translateX(0); } 50% { transform: translateX(60px) scale(1.1); } 100% { transform: translateX(0); } }
+        @keyframes lunge-left { 0% { transform: translateX(0); } 50% { transform: translateX(-60px) scale(1.1); } 100% { transform: translateX(0); } }
+        @keyframes damage-flash { 0% { filter: brightness(1); transform: translateX(0); } 25% { filter: brightness(5) sepia(1) hue-rotate(-50deg); transform: translateX(-10px); } 50% { filter: brightness(1); transform: translateX(10px); } 75% { transform: translateX(-5px); } 100% { transform: translateX(0); } }
+        @keyframes spawn-in { 0% { transform: scale(0); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        @keyframes float-up { 0% { transform: translate(-50%, 0); opacity: 1; } 100% { transform: translate(-50%, -50px); opacity: 0; } }
+        @keyframes catch-shake { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(15deg); } 75% { transform: rotate(-15deg); } }
+        @keyframes catch-success { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(0.1); opacity: 0; filter: brightness(100); } 100% { opacity: 0; } }
+        @keyframes death-anim { 0% { transform: scale(1) rotate(0deg); opacity: 1; filter: grayscale(0); } 20% { transform: scale(1.1) rotate(-10deg); filter: grayscale(100%) contrast(2) brightness(0.5); } 100% { transform: scale(0) rotate(180deg); opacity: 0; filter: grayscale(100%); } }
+        @keyframes victory-anim { 0% { transform: scale(1) translateY(0); } 25% { transform: scale(1.2) translateY(-20px); } 50% { transform: scale(1) translateY(0); } 75% { transform: scale(1.2) translateY(-20px); } 100% { transform: scale(1) translateY(0); } }
+
+        .anim-lunge-right { animation: lunge-right 0.4s cubic-bezier(0.18, 0.89, 0.32, 1.28); }
+        .anim-lunge-left { animation: lunge-left 0.4s cubic-bezier(0.18, 0.89, 0.32, 1.28); }
+        .anim-damage { animation: damage-flash 0.5s ease-out; }
+        .anim-clash-left { animation: lunge-right 0.3s ease-in; } .anim-clash-right { animation: lunge-left 0.3s ease-in; }
+        .anim-catching { animation: catch-shake 0.5s ease-in-out 3; } .anim-caught { animation: catch-success 0.5s forwards; }
+        .anim-death { animation: death-anim 1.5s forwards ease-in-out; } .anim-victory { animation: victory-anim 1s ease-in-out infinite; }
+
+        .fx-element { position: absolute; font-size: 6rem; z-index: 5; pointer-events: none; }
+        .floating-text { position: absolute; color: #fff; font-size: 2rem; font-weight: 900; text-shadow: 2px 2px 0 #000; animation: float-up 1s forwards ease-out; z-index: 10; pointer-events: none; left: 50%; top: 20%; }
+        
+        @keyframes fx-rock-drop { 0% { top: -100px; opacity: 0; transform: scale(0.5); } 70% { top: 40%; opacity: 1; transform: scale(1.2); } 100% { top: 110%; opacity: 0; } }
+        @keyframes fx-paper-slice { 0% { left: 10%; opacity: 0; transform: rotate(0deg); } 50% { opacity: 1; } 100% { left: 90%; opacity: 0; transform: rotate(720deg); } }
+        @keyframes fx-scissors-cut { 0% { transform: scale(2); opacity: 0; } 50% { transform: scale(1) rotate(45deg); opacity: 1; } 100% { transform: scale(0.8) rotate(0deg); opacity: 0; } }
+        @keyframes fx-lizard-tongue { 0% { transform: scaleX(0.1); opacity: 0.5; } 50% { transform: scaleX(1.5); opacity: 1; } 100% { transform: scaleX(0.1); opacity: 0; } }
+        @keyframes fx-spock-pulse { 0% { transform: scale(0.1); opacity: 1; filter: hue-rotate(0deg); } 100% { transform: scale(3); opacity: 0; filter: hue-rotate(180deg); } }
+
+        #menu-btn { position: absolute; top: 20px; right: 20px; z-index: 50; background: rgba(0,0,0,0.5); width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; border: 2px solid rgba(255,255,255,0.2); font-size: 1.5rem; }
+        .menu-modal { background: #16213e; border: 1px solid #0f3460; padding: 30px; border-radius: 16px; min-width: 350px; display: flex; flex-direction: column; gap: 15px; box-shadow: 0 10px 40px rgba(0,0,0,0.9); max-height: 80vh; overflow-y: auto;}
+        .menu-btn { padding: 15px; background: #0f3460; color: white; border: 1px solid #533483; cursor: pointer; text-align: center; border-radius: 8px; font-weight: bold; transition: 0.2s; }
+        .menu-btn:hover { background: #533483; }
+        .btn-primary { padding: 15px 40px; font-size: 1.2rem; background: linear-gradient(45deg, #e94560, #c0392b); color: white; border: none; border-radius: 50px; cursor: pointer; box-shadow: 0 4px 15px rgba(233, 69, 96, 0.4); font-weight: bold; transition: transform 0.2s; }
+        .btn-primary:hover { transform: scale(1.05); }
+        .modal-title { font-size: 2.5rem; margin-bottom: 20px; color: #e94560; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+        
+        .latent-list { display: flex; flex-direction: column; gap: 5px; max-height: 200px; overflow-y: auto; background: rgba(0,0,0,0.2); padding: 5px; }
+        .latent-item { display: flex; justify-content: space-between; align-items: center; padding: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; cursor: pointer; }
+        .latent-item:hover { background: rgba(255,255,255,0.1); }
+        .latent-info { display: flex; align-items: center; flex-grow: 1; }
+        .latent-badge { width: 20px; height: 20px; border-radius: 50%; border: 1px solid white; margin-right: 10px; display: inline-block; }
+        .btn-small { padding: 4px 8px; font-size: 0.8rem; border-radius: 4px; border: none; cursor: pointer; color: white; }
+        .btn-edit { background: #3498db; margin-left: 5px; }
+        
+        .cheat-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+        .cheat-toggle { background: #555; border: none; color: white; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
+        .cheat-active { background: #2ecc71; } .cheat-loss { background: #e74c3c; }
+        
+        #rename-modal { background: rgba(0,0,0,0.9); z-index: 40; }
+        .modal-input { padding: 10px; border-radius: 5px; border: 1px solid #555; background: #222; color: #fff; width: 80%; font-size: 1.2rem; margin-bottom: 20px; }
+        
+        select { background: #333; color: white; border: 1px solid #555; padding: 5px; border-radius: 4px; }
+        
+        /* Slot Preview */
+        .slot-container { display:flex; flex-direction:column; align-items:center; gap:5px; margin: 5px; background:rgba(0,0,0,0.3); padding:5px; border-radius:8px;}
+        .slot-preview { width: 40px; height: 40px; border: 1px dashed #555; display:flex; align-items:center; justify-content:center; overflow:hidden; border-radius:4px; }
+        .slot-preview img { width:100%; height:100%; object-fit:contain; }
+        .slot-name-input { width: 60px; font-size: 0.7rem; background: transparent; border: none; border-bottom: 1px solid #555; color: #aaa; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Top HUD Bar -->
+    <div id="oc-hud">
+        <div class="hud-slots" id="hud-slots"></div>
+        <button class="hud-expand-btn" onclick="toggleTeamDrawer()">▼</button>
+    </div>
+
+    <!-- Team Management Drawer -->
+    <div id="team-drawer">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h4 style="margin:0;">Convinced OCs</h4>
+            <button onclick="toggleTeamDrawer()" style="background:none; border:none; color:#aaa; cursor:pointer;">✖</button>
+        </div>
+        <div style="font-size:0.8rem; color:#aaa;">Click card to toggle active (Max 5). Star = Lead.</div>
+        <div class="team-grid" id="team-grid"></div>
+    </div>
+
+    <div id="menu-btn" onclick="toggleMainMenu()">☰</div>
+
+    <!-- Main Menu -->
+    <div id="main-menu" class="overlay" style="background: rgba(0,0,0,0.85); z-index: 30;">
+        <div class="menu-modal">
+            <h2 style="margin:0; color:#e94560;">PAUSED</h2>
+            <button class="menu-btn" onclick="closeAllMenus()">Resume Game</button>
+            <button class="menu-btn" onclick="openSettings()">Database & Settings</button>
+        </div>
+    </div>
+    
+    <!-- Rename Modal -->
+    <div id="rename-modal" class="overlay">
+        <div class="menu-modal" style="max-width: 300px;">
+            <h3>Rename OC</h3>
+            <input type="text" id="rename-input" class="modal-input" placeholder="Enter Name">
+            <div style="display:flex; gap:10px; justify-content:center; width:100%;">
+                <button class="btn-primary" style="padding:10px 20px; font-size:1rem;" onclick="saveRename()">Save</button>
+                <button class="menu-btn" style="padding:10px 20px;" onclick="closeRenameModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Switch Modal -->
+    <div id="switch-modal">
+        <h3 style="margin-top:0;">Switch OC</h3>
+        <div id="switch-list"></div>
+        <button class="menu-btn" style="margin-top:10px;" onclick="document.getElementById('switch-modal').style.display='none'">Cancel</button>
+    </div>
+
+    <div id="settings-menu" class="overlay" style="background: rgba(0,0,0,0.85); z-index: 31;">
+        <div class="menu-modal">
+            <h2 style="margin:0;">Database</h2>
+            
+            <!-- Collection Viewer -->
+            <div style="background:rgba(0,0,0,0.3); padding:10px; border-radius:8px;">
+                <h4 style="margin:0 0 10px 0; color:#aaa;">Collection List</h4>
+                <div id="latent-list-container" class="latent-list"></div>
+                <div style="font-size:0.8rem; color:#aaa; margin-top:5px; text-align:center;">Click row to Sync (Equip Color)</div>
+            </div>
+
+            <!-- Asset Management -->
+            <div style="background:rgba(0,0,0,0.3); padding:15px; border-radius:8px; margin-top:10px;">
+                <h4 style="margin:0 0 10px 0; color:#aaa;">Assets</h4>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span>Overworld Sheet</span>
+                    <label for="sprite-upload" style="padding:3px 10px; border-radius:15px; background:#3498db; color:white; cursor:pointer; font-size:0.8rem;">Upload</label>
+                    <input type="file" id="sprite-upload" accept="image/*" style="display:none;" onchange="handleSpriteUpload(this)">
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span>Player Battle Img</span>
+                    <div style="display:flex; align-items:center; gap:5px;">
+                        <div id="preview-player-battle" class="slot-preview" style="width:30px; height:30px;"></div>
+                        <label for="battle-sprite-upload" style="padding:3px 10px; border-radius:15px; background:#9b59b6; color:white; cursor:pointer; font-size:0.8rem;">Upload</label>
+                    </div>
+                    <input type="file" id="battle-sprite-upload" accept="image/*" style="display:none;" onchange="handleBattleSpriteUpload(this)">
+                </div>
+                
+                <div style="font-size:0.8rem; color:#aaa; margin:10px 0 5px 0;">Custom OCs (Wild Pool)</div>
+                <div style="display:flex; gap:5px; flex-wrap:wrap; justify-content:center;">
+                    <!-- A -->
+                    <div class="slot-container">
+                        <div id="preview-slot-A" class="slot-preview"></div>
+                        <input id="name-slot-A" class="slot-name-input" placeholder="Name" onchange="updateSlotName('A', this.value)">
+                        <label class="btn-small" style="background:#9b59b6; cursor:pointer; font-size:0.7rem;">Slot A<input type="file" style="display:none" onchange="handleCustomSlotUpload(this, 'A')"></label>
+                    </div>
+                    <!-- B -->
+                    <div class="slot-container">
+                        <div id="preview-slot-B" class="slot-preview"></div>
+                        <input id="name-slot-B" class="slot-name-input" placeholder="Name" onchange="updateSlotName('B', this.value)">
+                        <label class="btn-small" style="background:#9b59b6; cursor:pointer; font-size:0.7rem;">Slot B<input type="file" style="display:none" onchange="handleCustomSlotUpload(this, 'B')"></label>
+                    </div>
+                    <!-- C -->
+                    <div class="slot-container">
+                        <div id="preview-slot-C" class="slot-preview"></div>
+                        <input id="name-slot-C" class="slot-name-input" placeholder="Name" onchange="updateSlotName('C', this.value)">
+                        <label class="btn-small" style="background:#9b59b6; cursor:pointer; font-size:0.7rem;">Slot C<input type="file" style="display:none" onchange="handleCustomSlotUpload(this, 'C')"></label>
+                    </div>
+                    <!-- D -->
+                    <div class="slot-container">
+                        <div id="preview-slot-D" class="slot-preview"></div>
+                        <input id="name-slot-D" class="slot-name-input" placeholder="Name" onchange="updateSlotName('D', this.value)">
+                        <label class="btn-small" style="background:#9b59b6; cursor:pointer; font-size:0.7rem;">Slot D<input type="file" style="display:none" onchange="handleCustomSlotUpload(this, 'D')"></label>
+                    </div>
+                    <!-- E -->
+                    <div class="slot-container">
+                        <div id="preview-slot-E" class="slot-preview"></div>
+                        <input id="name-slot-E" class="slot-name-input" placeholder="Name" onchange="updateSlotName('E', this.value)">
+                        <label class="btn-small" style="background:#9b59b6; cursor:pointer; font-size:0.7rem;">Slot E<input type="file" style="display:none" onchange="handleCustomSlotUpload(this, 'E')"></label>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Gameplay Settings -->
+            <div style="background:rgba(0,0,0,0.3); padding:15px; border-radius:8px; margin-top:10px;">
+                <h4 style="margin:0 0 10px 0; color:#aaa;">Gameplay</h4>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span>Battle Style</span>
+                    <button id="style-toggle" style="padding:3px 10px; border-radius:20px; border:none; cursor:pointer; font-size:0.8rem;" onclick="toggleBattleStyle()">Easy (RPS)</button>
+                </div>
+            </div>
+            
+            <!-- Debug / Cheats -->
+            <div style="background:rgba(0,0,0,0.3); padding:15px; border-radius:8px; margin-top:10px;">
+                <h4 style="margin:0 0 10px 0; color:#f1c40f;">Debug / Cheats</h4>
+                <div class="cheat-row"><span>Auto Convince</span><button id="cheat-catch" class="cheat-toggle" onclick="toggleCheat('alwaysCatch')">OFF</button></div>
+                <div class="cheat-row"><span>Force Win</span><button id="cheat-win" class="cheat-toggle" onclick="toggleCheat('forceWin')">OFF</button></div>
+                <div class="cheat-row"><span>Force Lose</span><button id="cheat-lose" class="cheat-toggle" onclick="toggleCheat('forceLose')">OFF</button></div>
+                <div style="display:flex; justify-content:space-between; margin-top:10px; gap:10px;">
+                    <button onclick="cheatInstantWin()" style="flex:1; background:#2ecc71; border:none; color:white; padding:5px; border-radius:4px; font-weight:bold; cursor:pointer;">Win Battle</button>
+                    <button onclick="cheatInstantLose()" style="flex:1; background:#e74c3c; border:none; color:white; padding:5px; border-radius:4px; font-weight:bold; cursor:pointer;">Lose Battle</button>
+                </div>
+            </div>
+
+            <div style="margin-top:10px; text-align:center;">
+                <button onclick="downloadSaveData()" style="background:#2ecc71; border:none; color:white; padding:8px 15px; border-radius:4px; cursor:pointer; font-weight:bold;">Export Data</button>
+            </div>
+
+            <button class="menu-btn" style="margin-top:20px;" onclick="closeSettings()">Back</button>
+        </div>
+    </div>
+
+    <div id="start-screen" class="overlay" style="display: flex;">
+        <div class="modal-title">LATENT SPACE FIGHT CLUB</div>
+        <div id="hero-preview" class="floating" style="margin-bottom: 20px; width: 120px; height: 120px;"></div>
+        <p style="color: #aaa; margin-bottom: 30px;">WASD / Arrows to Move.<br>Scroll to Zoom.</p>
+        <button class="btn-primary" onclick="startGame()">Start Adventure</button>
+    </div>
+
+    <div id="battle-ui" class="overlay">
+        <div class="battle-header">
+            <div class="health-box">
+                <div style="font-size:0.8rem; color:#aaa;" id="player-name">YOU</div>
+                <div class="level-badge" id="player-lvl">1</div>
+                <div class="hp-bar-bg"><div id="player-hp-bar" class="hp-bar-fill"></div></div>
+                <div style="display:flex; justify-content:space-between; margin-top:5px;">
+                    <span id="player-hp-text">100/100</span>
+                    <span id="player-combo" class="combo-meter">x0</span>
+                </div>
+                <div style="font-size:0.7rem; color:#aaa; margin-top:2px;" id="xp-text">XP: 0/100</div>
+            </div>
+            <div class="health-box" style="border-color: var(--enemy-color)">
+                <div style="font-size:0.8rem; color:#aaa;" id="enemy-name">WILD OC</div>
+                <div class="hp-bar-bg"><div id="enemy-hp-bar" class="hp-bar-fill" style="background: linear-gradient(90deg, #e74c3c, #c0392b);"></div></div>
+                <div style="text-align:right; margin-top:5px;" id="enemy-hp-text">100/100</div>
+            </div>
+        </div>
+        
+        <div id="battle-scene">
+            <div id="battle-hero" class="battler"></div>
+            <div style="font-size:3rem; font-weight:900; font-style:italic; color:rgba(255,255,255,0.1); position:absolute; z-index:1;">VS</div>
+            <div id="battle-enemy" class="battler"></div>
+        </div>
+
+        <div id="battle-log">A Wild OC appeared!</div>
+
+        <div class="battle-controls" id="battle-controls-area"></div>
+    </div>
+
+    <div id="result-screen" class="overlay">
+        <div id="result-title" class="modal-title">VICTORY!</div>
+        <p id="result-message">You defeated the Wild OC.</p>
+        <div id="xp-gain-msg" style="color:#f1c40f; font-weight:bold; margin-bottom:20px;"></div>
+        <button class="btn-primary" onclick="returnToOverworld()">Continue</button>
+    </div>
+</div>
+
+<script>
+    /* --- CONFIGURATION & CONSTANTS --- */
+    const CONFIG = {
+        gridSize: 15,
+        tileSize: 80,
+        scale: 1.0,
+        colors: { grassTop: '#2ecc71', grassSide: '#27ae60', waterTop: '#3498db', waterSide: '#2980b9', treeTrunk: '#795548', treeLeaves: '#2e7d32', bg: '#1a1a2e' }
+    };
+    
+    const CHEATS = { alwaysCatch: false, forceWin: false, forceLose: false };
+    const MODES = { EASY: ['Rock', 'Paper', 'Scissors'], NORMAL: ['Rock', 'Paper', 'Scissors', 'Lizard', 'Spock'] };
+    let currentBattleMode = 'EASY';
+    const MATCHUPS = {
+        'Rock': { beats: ['Scissors', 'Lizard'], verbs: ['crushes', 'crushes'] },
+        'Paper': { beats: ['Rock', 'Spock'], verbs: ['covers', 'disproves'] },
+        'Scissors': { beats: ['Paper', 'Lizard'], verbs: ['cuts', 'decapitates'] },
+        'Lizard': { beats: ['Spock', 'Paper'], verbs: ['poisons', 'eats'] },
+        'Spock': { beats: ['Scissors', 'Rock'], verbs: ['smashes', 'vaporizes'] }
+    };
+
+    /* --- UI & MENU HELPERS (Moved up) --- */
+    function toggleMainMenu() { const el = document.getElementById('main-menu'); el.style.display = el.style.display === 'flex' ? 'none' : 'flex'; }
+    function closeAllMenus() { 
+        document.getElementById('main-menu').style.display = 'none'; 
+        document.getElementById('settings-menu').style.display = 'none'; 
+        document.getElementById('rename-modal').style.display = 'none'; 
+        document.getElementById('team-drawer').style.display = 'none'; 
+        document.getElementById('switch-modal').style.display = 'none';
+    }
+    function openSettings() { document.getElementById('main-menu').style.display = 'none'; document.getElementById('settings-menu').style.display = 'flex'; refreshCollectionUI(); updateSettingsUI(); }
+    function closeSettings() { document.getElementById('settings-menu').style.display = 'none'; document.getElementById('main-menu').style.display = 'flex'; }
+    
+    function renderSpriteToDiv(divId, imgSrc, isSvgString = false, filter = '') {
+        const el = document.getElementById(divId);
+        if(!el) return;
+        if (isSvgString) el.innerHTML = imgSrc;
+        else el.innerHTML = `<img src="${imgSrc}" style="width:100%; height:100%; object-fit:contain; filter:drop-shadow(0 5px 5px rgba(0,0,0,0.5)) ${filter};">`;
+    }
+
+    /* --- PROCEDURAL ASSETS --- */
+    const AssetCache = { grass: null, water: null, tree: null };
+    function generateTextures() {
+        const size = 128; 
+        const gCan = document.createElement('canvas'); gCan.width = size; gCan.height = size; const gCtx = gCan.getContext('2d');
+        gCtx.fillStyle = '#2ecc71'; gCtx.fillRect(0,0,size,size);
+        for(let i=0; i<300; i++) { gCtx.fillStyle = Math.random()>0.5?'#27ae60':'#58d68d'; gCtx.fillRect(Math.random()*size, Math.random()*size, 1, 2+Math.random()*4); }
+        AssetCache.grass = gCan;
+        const wCan = document.createElement('canvas'); wCan.width = size; wCan.height = size; const wCtx = wCan.getContext('2d');
+        const grad = wCtx.createLinearGradient(0,0,size,size); grad.addColorStop(0, '#3498db'); grad.addColorStop(1, '#2980b9');
+        wCtx.fillStyle = grad; wCtx.fillRect(0,0,size,size); wCtx.strokeStyle = 'rgba(255,255,255,0.2)'; wCtx.lineWidth = 2;
+        for(let i=0; i<10; i++) { wCtx.beginPath(); let x=Math.random()*size, y=Math.random()*size; wCtx.moveTo(x, y); wCtx.lineTo(x+10+Math.random()*10, y); wCtx.stroke(); }
+        AssetCache.water = wCan;
+        const tCan = document.createElement('canvas'); tCan.width = 200; tCan.height = 300; const tCtx = tCan.getContext('2d');
+        tCtx.fillStyle = '#5d4037'; tCtx.fillRect(80, 200, 40, 100);
+        function drawCluster(cx, cy, radius, color) { tCtx.beginPath(); tCtx.arc(cx, cy, radius, 0, Math.PI*2); tCtx.fillStyle = color; tCtx.fill(); tCtx.beginPath(); tCtx.arc(cx, cy+radius*0.2, radius*0.8, 0, Math.PI*2); tCtx.fillStyle = 'rgba(0,0,0,0.1)'; tCtx.fill(); }
+        const dg='#1b5e20', mg='#2e7d32', lg='#4caf50';
+        drawCluster(60,200,50,dg); drawCluster(140,200,50,dg); drawCluster(100,140,60,dg);
+        drawCluster(50,160,45,mg); drawCluster(150,160,45,mg); drawCluster(100,100,55,mg);
+        drawCluster(80,120,30,lg); drawCluster(120,130,30,lg); drawCluster(100,70,40,lg);
+        AssetCache.tree = tCan;
+    }
+    generateTextures();
+
+    function generateLatentSVG(colorBody, colorHair, expression = 'neutral') {
+        const defs = `<defs><linearGradient id="g_${colorBody}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${colorBody}"/><stop offset="1" stop-color="#000" stop-opacity="0.3"/></linearGradient><filter id="s"><feDropShadow dx="0" dy="5" stdDeviation="3" flood-color="#000" flood-opacity="0.5"/></filter></defs>`;
+        const eyes = expression === 'angry' ? `<path d="M35 42 L48 48 M65 42 L52 48" stroke="#333" stroke-width="3" stroke-linecap="round"/><circle cx="38" cy="48" r="3" fill="#222"/> <circle cx="62" cy="48" r="3" fill="#222"/>` : `<ellipse cx="35" cy="48" rx="4" ry="6" fill="#222"/> <ellipse cx="65" cy="48" rx="4" ry="6" fill="#222"/><path d="M35 46 L37 44 M65 46 L67 44" stroke="white" stroke-width="2"/>`;
+        return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style="filter:url(#s)">${defs}<path d="M75 75 Q90 60 85 30" stroke="${colorBody}" stroke-width="10" fill="none" stroke-linecap="round"/><rect x="25" y="55" width="50" height="35" rx="15" fill="${colorBody}" /><circle cx="50" cy="45" r="32" fill="${colorBody}" /><path d="M22 30 L15 5 L45 20 Z" fill="${colorHair}" /><path d="M78 30 L85 5 L55 20 Z" fill="${colorHair}" /><path d="M20 40 Q50 60 80 40" fill="none" stroke="${colorHair}" stroke-width="4" stroke-linecap="round"/>${eyes}<path d="M47 58 Q50 61 53 58" fill="none" stroke="#333" stroke-width="2"/><circle cx="25" cy="55" r="4" fill="#ffaaa5" opacity="0.6"/><circle cx="75" cy="55" r="4" fill="#ffaaa5" opacity="0.6"/></svg>`;
+    }
+    function svgToUrl(svg) { return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); }
+
+    /* --- ASSET MANAGEMENT --- */
+    const HERO_IMG = new Image(); 
+    const ENEMY_IMG = new Image(); ENEMY_IMG.src = svgToUrl(generateLatentSVG('#f1c40f', '#e74c3c', 'angry'));
+    let usingCustomSprite = false;
+    let battleHeroSrc = null;
+    const CUSTOM_SLOTS = { A: null, B: null, C: null, D: null, E: null };
+    const CUSTOM_NAMES = { A: "", B: "", C: "", D: "", E: "" };
+
+    // Initial fill
+    renderSpriteToDiv('hero-preview', generateLatentSVG('#ecf0f1', '#3498db', 'neutral'), true);
+    renderSpriteToDiv('battle-hero', generateLatentSVG('#ecf0f1', '#3498db', 'neutral'), true);
+    renderSpriteToDiv('battle-enemy', generateLatentSVG('#f1c40f', '#e74c3c', 'angry'), true);
+    HERO_IMG.src = svgToUrl(generateLatentSVG('#ecf0f1', '#3498db', 'neutral'));
+
+    function checkStorage() {
+        const savedSprite = localStorage.getItem('lfc_hero_sprite');
+        if (savedSprite) { HERO_IMG.src = savedSprite; usingCustomSprite = true; renderSpriteToDiv('hero-preview', savedSprite, false); }
+        
+        const savedBattle = localStorage.getItem('lfc_battle_sprite');
+        if (savedBattle) {
+            battleHeroSrc = savedBattle;
+            renderSpriteToDiv('preview-player-battle', battleHeroSrc, false);
+        }
+        
+        ['A','B','C','D','E'].forEach(slot => {
+            const data = localStorage.getItem('lfc_slot_'+slot);
+            if(data) {
+                CUSTOM_SLOTS[slot] = data;
+                renderSpriteToDiv('preview-slot-'+slot, data, false);
+            }
+            const name = localStorage.getItem('lfc_slot_name_'+slot);
+            if(name) {
+                CUSTOM_NAMES[slot] = name;
+                const input = document.getElementById('name-slot-'+slot);
+                if(input) input.value = name;
+            }
+        });
+    }
+    checkStorage();
+
+    function handleSpriteUpload(input) {
+        if (input.files && input.files[0]) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const result = e.target.result;
+                try { localStorage.setItem('lfc_hero_sprite', result); alert("Overworld Sprite Saved!"); } catch (err) { alert("Warning: Image too large to save."); }
+                HERO_IMG.src = result; usingCustomSprite = true; renderSpriteToDiv('hero-preview', result, false);
+            }
+            reader.readAsDataURL(input.files[0]);
+        }
+    }
+    
+    function handleBattleSpriteUpload(input) {
+        if (input.files && input.files[0]) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const result = e.target.result;
+                try { localStorage.setItem('lfc_battle_sprite', result); alert("Player Battle Sprite Saved!"); } catch (err) { alert("Warning: Image too large to save."); }
+                battleHeroSrc = result;
+                renderSpriteToDiv('preview-player-battle', result, false);
+            }
+            reader.readAsDataURL(input.files[0]);
+        }
+    }
+    
+    function handleCustomSlotUpload(input, slot) {
+        if (input.files && input.files[0]) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const result = e.target.result;
+                try { localStorage.setItem('lfc_slot_'+slot, result); alert(`Slot ${slot} Saved!`); } catch (err) { alert("Image too large."); }
+                CUSTOM_SLOTS[slot] = result;
+                renderSpriteToDiv('preview-slot-'+slot, result, false);
+            }
+            reader.readAsDataURL(input.files[0]);
+        }
+    }
+    
+    function updateSlotName(slot, value) {
+        CUSTOM_NAMES[slot] = value;
+        localStorage.setItem('lfc_slot_name_'+slot, value);
+    }
+
+    function clearCustomSprite() { localStorage.removeItem('lfc_hero_sprite'); const s = generateLatentSVG('#ecf0f1', '#3498db', 'neutral'); HERO_IMG.src = svgToUrl(s); usingCustomSprite = false; renderSpriteToDiv('hero-preview', s, true); }
+    
+    function downloadSaveData() {
+        const data = { game: "Latent Space Fight Club", version: "1.3", player: player, settings: { mode: currentBattleMode } };
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data));
+        const anchor = document.createElement('a'); anchor.setAttribute("href", dataStr); anchor.setAttribute("download", "lfc_savegame.json"); document.body.appendChild(anchor); anchor.click(); anchor.remove();
+    }
+    
+    // Cheat Toggles
+    function toggleCheat(cheat) {
+        CHEATS[cheat] = !CHEATS[cheat];
+        if (cheat === 'forceWin' && CHEATS.forceWin) { CHEATS.forceLose = false; updateCheatUI('forceLose'); }
+        if (cheat === 'forceLose' && CHEATS.forceLose) { CHEATS.forceWin = false; updateCheatUI('forceWin'); }
+        updateCheatUI(cheat);
+    }
+    function updateCheatUI(cheat) {
+        const btn = document.getElementById(cheat === 'alwaysCatch' ? 'cheat-catch' : (cheat === 'forceWin' ? 'cheat-win' : 'cheat-lose'));
+        if (CHEATS[cheat]) { btn.innerText = "ON"; btn.className = "cheat-toggle " + (cheat === 'forceLose' ? "cheat-loss" : "cheat-active"); }
+        else { btn.innerText = "OFF"; btn.className = "cheat-toggle"; }
+    }
+    
+    // Defined early for hoisting safety
+    function cheatInstantWin() { if (currentState===STATE.BATTLE && battleState?.active) { closeAllMenus(); battleState.enemyHp=0; battleState.end(true); } }
+    function cheatInstantLose() { if (currentState===STATE.BATTLE && battleState?.active) { closeAllMenus(); battleState.activeBattler.currentHp=0; battleState.updateUI("DEBUG: Instant Defeat.", "lose"); battleState.end(false); } }
+    function toggleBattleStyle() { currentBattleMode = currentBattleMode === 'EASY' ? 'NORMAL' : 'EASY'; updateSettingsUI(); }
+    function updateSettingsUI() { const btn = document.getElementById('style-toggle'); if (currentBattleMode === 'EASY') { btn.innerText = "Easy (RPS)"; btn.style.background = "#2ecc71"; } else { btn.innerText = "Normal (RPSLS)"; btn.style.background = "#e67e22"; } }
+
+    /* --- GAME ENGINE & STATE --- */
+    const STATE = { START: 0, OVERWORLD: 1, BATTLE: 2, TRANSITION: 3 };
+    let currentState = STATE.START;
+    let mapData = [];
+    const player = { 
+        x: 7, y: 7, direction: 'south',
+        level: 1, xp: 0, nextLevelXp: 100, maxHp: 100, currentHp: 100,
+        collection: [], // [{ name, hue, level, active: bool, assignedSlot: 'A'|null, currentHp, maxHp }]
+        activeHue: 0
+    };
+    
+    let battleState = null;
+    let userScale = 1.0; 
+    let transitionStartTime = 0;
+
+    function generateMap() {
+        mapData = [];
+        for(let y=0; y<CONFIG.gridSize; y++) {
+            let row = [];
+            for(let x=0; x<CONFIG.gridSize; x++) {
+                const r = Math.random();
+                if (x===0||x===CONFIG.gridSize-1||y===0||y===CONFIG.gridSize-1) row.push(1);
+                else if (r > 0.88) row.push(1); else if (r > 0.95) row.push(2); else row.push(0);
+            }
+            mapData.push(row);
+        }
+        mapData[7][7] = 0;
+    }
+
+    /* --- PROCEDURAL ENEMY GENERATOR WITH SLOT SUPPORT --- */
+    const LATENT_PREFIXES = ["Glitch", "Noise", "Tensor", "Null", "Void", "Vector", "Hyper", "Deep"];
+    const LATENT_SUFFIXES = ["Cat", "Dog", "Toad", "Moth", "Ghost", "Spirit", "Daemon", "Blob"];
+    
+    function generateWildLatent(playerLevel) {
+        // Check for Custom Slot Availability
+        const availableSlots = Object.keys(CUSTOM_SLOTS).filter(k => CUSTOM_SLOTS[k] !== null);
+        let slot = null;
+        let baseName = "";
+        
+        // STRICT POOL: If custom assets exist, ONLY use them.
+        if (availableSlots.length > 0) {
+            // Pick a slot
+            slot = availableSlots[Math.floor(Math.random() * availableSlots.length)];
+            // Use custom name or construct "Wild [SlotName]"
+            const customName = CUSTOM_NAMES[slot];
+            if (customName && customName.trim() !== "") baseName = "Wild " + customName;
+            else baseName = LATENT_PREFIXES[Math.floor(Math.random() * LATENT_PREFIXES.length)] + " " + slot;
+        } else {
+            // Procedural Fallback ONLY if no custom assets
+            baseName = LATENT_PREFIXES[Math.floor(Math.random() * LATENT_PREFIXES.length)] + " " + LATENT_SUFFIXES[Math.floor(Math.random() * LATENT_SUFFIXES.length)];
+        }
+        
+        const hue = Math.floor(Math.random() * 360);
+        const hp = 80 + (playerLevel * 20) + Math.floor(Math.random() * 30);
+        
+        return { name: baseName, hue, maxHp: hp, currentHp: hp, level: playerLevel, active: false, assignedSlot: slot };
+    }
+
+    function startGame() { generateMap(); document.getElementById('start-screen').style.display = 'none'; closeAllMenus(); currentState = STATE.OVERWORLD; document.getElementById('oc-hud').style.display = 'flex'; updateHUD(); resize(); loop(); }
+
+    /* --- RENDER LOOPS --- */
+    const canvas = document.getElementById('gameCanvas'); const ctx = canvas.getContext('2d'); let time = 0;
+    window.addEventListener('wheel', e => { if(currentState !== STATE.OVERWORLD) return; e.preventDefault(); CONFIG.scale += e.deltaY * -0.001; CONFIG.scale = Math.min(Math.max(0.5, CONFIG.scale), 2.5); userScale = CONFIG.scale; }, {passive: false});
+
+    function loop() { time += 0.05; if (currentState === STATE.OVERWORLD) drawWorld(); else if (currentState === STATE.TRANSITION) { updateTransition(); drawWorld(true); } requestAnimationFrame(loop); }
+    function updateTransition() { const prog = Math.min((Date.now() - transitionStartTime)/1200, 1); CONFIG.scale = userScale + ((prog*prog*prog) * (4.5 - userScale)); if (prog >= 1) startBattle(); }
+
+    function drawWorld(shake = false) {
+        ctx.fillStyle = CONFIG.colors.bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        const scaledTile = CONFIG.tileSize * CONFIG.scale, tileW = scaledTile, tileH = scaledTile * 0.75; 
+        const pScreenX = player.x * tileW, pScreenY = player.y * tileH;
+        let offsetX = (canvas.width / 2) - pScreenX - (tileW / 2), offsetY = (canvas.height / 2) - pScreenY - (tileH / 2);
+        if (shake) { offsetX += (Math.random() - 0.5) * 25; offsetY += (Math.random() - 0.5) * 25; }
+
+        for (let y = 0; y < CONFIG.gridSize; y++) {
+            for (let x = 0; x < CONFIG.gridSize; x++) {
+                const screenX = (x * tileW) + offsetX, screenY = (y * tileH) + offsetY;
+                const margin = 200 * CONFIG.scale;
+                if (screenX < -margin || screenX > canvas.width + margin || screenY < -margin || screenY > canvas.height + margin) continue;
+                drawTile(screenX, screenY, tileW, tileH, mapData[y][x], x, y);
+                if (player.x === x && player.y === y) drawPlayerSprite(screenX, screenY, tileW, tileH);
+            }
+        }
+    }
+
+    function drawTile(x, y, w, h, type, gridX, gridY) {
+        const depth = 15 * CONFIG.scale; 
+        if (type <= 1) { ctx.fillStyle = '#1e8449'; ctx.fillRect(x, y+h, w, depth); ctx.drawImage(AssetCache.grass, x, y, w, h); }
+        else { ctx.fillStyle = '#1f618d'; ctx.fillRect(x, y+h, w, depth); ctx.drawImage(AssetCache.water, x, y + Math.sin(time+gridX+gridY)*(2*CONFIG.scale), w, h); }
+        ctx.strokeStyle = 'rgba(0,0,0,0.1)'; ctx.lineWidth = 1 * CONFIG.scale; ctx.strokeRect(x, y, w, h);
+        if (type === 1) drawTree(x + w/2, y + h/2, w);
+    }
+
+    function drawTree(cx, cy, tileW) {
+        const scale = CONFIG.scale;
+        ctx.globalCompositeOperation = 'destination-over'; ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(cx, cy + (5*scale) + (5*scale), tileW/1.8, tileW/4, 0, 0, Math.PI*2); ctx.fill(); ctx.globalCompositeOperation = 'source-over';
+        const drawW = tileW * 1.5, drawH = drawW * 1.5;
+        ctx.drawImage(AssetCache.tree, cx - drawW/2, cy - drawH + (20*scale), drawW, drawH);
+    }
+
+    function drawPlayerSprite(screenX, screenY, tileW, tileH) {
+        const scale = CONFIG.scale, sW = 60 * scale, sH = 60 * scale;
+        const cx = screenX + tileW/2, cy = screenY + tileH/2;
+        const drawX = cx - sW/2, drawY = cy - sH + (15 * scale); 
+        ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(cx, cy + (20 * scale), 20 * scale, 10 * scale, 0, 0, Math.PI*2); ctx.fill();
+        const bounce = Math.abs(Math.sin(time * 4)) * (5 * scale);
+        ctx.filter = `hue-rotate(${player.activeHue}deg)`;
+        if (usingCustomSprite) {
+            const sheetW = HERO_IMG.naturalWidth || 512, sheetH = HERO_IMG.naturalHeight || 512, cellW = sheetW/2, cellH = sheetH/2;
+            let sx = 0, sy = 0;
+            switch(player.direction) { case 'west': sx=0;sy=0; break; case 'north': sx=cellW;sy=0; break; case 'south': sx=0;sy=cellH; break; case 'east': sx=cellW;sy=cellH; break; default: sx=0;sy=cellH; }
+            ctx.drawImage(HERO_IMG, sx, sy, cellW, cellH, drawX, drawY - bounce, sW, sH);
+        } else { ctx.drawImage(HERO_IMG, drawX, drawY - bounce, sW, sH); }
+        ctx.filter = 'none';
+    }
+
+    function movePlayer(dx, dy) {
+        if (currentState !== STATE.OVERWORLD) return;
+        if (dy < 0) player.direction = 'north'; else if (dy > 0) player.direction = 'south'; else if (dx < 0) player.direction = 'west'; else if (dx > 0) player.direction = 'east';
+        const newX = player.x + dx, newY = player.y + dy;
+        if (newX < 0 || newX >= CONFIG.gridSize || newY < 0 || newY >= CONFIG.gridSize) return;
+        if (mapData[newY][newX] <= 1) { player.x = newX; player.y = newY; if (Math.random() < 0.15) triggerEncounter(); }
+    }
+    function triggerEncounter() { currentState = STATE.TRANSITION; transitionStartTime = Date.now(); userScale = CONFIG.scale; }
+
+    /* --- BATTLE SYSTEM --- */
+    const BattleFX = {
+        scene: document.getElementById('battle-scene'),
+        hero: document.getElementById('battle-hero'),
+        enemy: document.getElementById('battle-enemy'),
+        spawnProjectile(emoji, animationKey, isPlayer) {
+            return new Promise(resolve => {
+                const el = document.createElement('div'); el.innerText = emoji; el.className = 'fx-element'; el.style.animation = `${animationKey} 0.6s forwards`;
+                if (isPlayer) { el.style.left = '20%'; el.style.top = '30%'; } else { el.style.right = '20%'; el.style.top = '30%'; }
+                this.scene.appendChild(el); setTimeout(() => { el.remove(); resolve(); }, 600);
+            });
+        },
+        showDamage(amount, isPlayerTarget) {
+            const el = document.createElement('div'); el.innerText = amount; el.className = 'floating-text';
+            if (isPlayerTarget) { el.style.left = '20%'; el.style.color = '#e74c3c'; } else { el.style.right = '20%'; el.style.left = 'auto'; el.style.color = '#f1c40f'; }
+            this.scene.appendChild(el); setTimeout(() => el.remove(), 1000);
+        },
+        async clash() {
+            this.hero.classList.add('anim-clash-left'); this.enemy.classList.add('anim-clash-right');
+            const spark = document.createElement('div'); spark.innerText = "💥"; spark.className = 'fx-element'; spark.style.left = '50%'; spark.style.top = '30%'; spark.style.transform = 'translate(-50%, -50%)'; spark.style.animation = 'spawn-in 0.3s';
+            this.scene.appendChild(spark); await new Promise(r => setTimeout(r, 400));
+            this.hero.classList.remove('anim-clash-left'); this.enemy.classList.remove('anim-clash-right'); spark.remove();
+        },
+        async attack(move, isPlayer) {
+            const attacker = isPlayer ? this.hero : this.enemy; const victim = isPlayer ? this.enemy : this.hero;
+            attacker.classList.add(isPlayer ? 'anim-lunge-right' : 'anim-lunge-left');
+            let emoji = '', anim = '';
+            switch(move) { case 'Rock': emoji = '🪨'; anim = 'fx-rock-drop'; break; case 'Paper': emoji = '📜'; anim = 'fx-paper-slice'; break; case 'Scissors': emoji = '✂️'; anim = 'fx-scissors-cut'; break; case 'Lizard': emoji = '🦎'; anim = 'fx-lizard-tongue'; break; case 'Spock': emoji = '✨'; anim = 'fx-spock-pulse'; break; }
+            const el = document.createElement('div'); el.innerText = emoji; el.className = 'fx-element'; el.style.animation = `${anim} 0.8s forwards`;
+            if (isPlayer) { el.style.right = '20%'; el.style.top = '20%'; } else { el.style.left = '20%'; el.style.top = '20%'; }
+            this.scene.appendChild(el);
+            await new Promise(r => setTimeout(r, 600)); el.remove();
+            victim.classList.add('anim-damage'); await new Promise(r => setTimeout(r, 500));
+            attacker.classList.remove(isPlayer ? 'anim-lunge-right' : 'anim-lunge-left'); victim.classList.remove('anim-damage');
+        },
+        async attemptStabilize() {
+            const ball = document.createElement('div'); ball.innerText = "💠"; ball.className = 'fx-element'; 
+            ball.style.left = '20%'; ball.style.top = '30%'; ball.style.transition = 'all 0.5s';
+            this.scene.appendChild(ball);
+            await new Promise(r => requestAnimationFrame(() => { ball.style.left = '80%'; ball.style.top = '30%'; setTimeout(r, 500); }));
+            ball.remove();
+            this.enemy.classList.add('anim-catching'); await new Promise(r => setTimeout(r, 1500)); this.enemy.classList.remove('anim-catching');
+        },
+        async handleEndGame(winnerIsPlayer, isCatch = false) {
+            const winner = winnerIsPlayer ? this.hero : this.enemy; const loser = winnerIsPlayer ? this.enemy : this.hero;
+            winner.className = 'battler'; loser.className = 'battler';
+            if (isCatch) { loser.classList.add('anim-caught'); await new Promise(r => setTimeout(r, 600)); }
+            else { winner.classList.add('anim-victory'); loser.classList.add('anim-death'); await new Promise(r => setTimeout(r, 1500)); }
+        }
+    };
+
+    class Battle {
+        constructor() {
+            this.enemyData = generateWildLatent(player.level);
+            this.enemyHp = this.enemyData.currentHp;
+            
+            // Determine active battler (Lead)
+            const lead = player.collection.find(c => c.active && c.isLead);
+            if (lead && lead.currentHp > 0) {
+                this.activeBattler = lead;
+                this.isPlayerChar = false;
+            } else {
+                this.activeBattler = player;
+                this.isPlayerChar = true;
+            }
+            
+            this.combo = 0; this.active = true; this.baseDamage = 10;
+        }
+
+        async resolve(pMove) {
+            if (!this.active) return;
+            this.toggleControls(false);
+            const moves = MODES[currentBattleMode];
+            let eMove = moves[Math.floor(Math.random() * moves.length)];
+            
+            if (CHEATS.forceWin) { const beatenByP = MATCHUPS[pMove].beats; eMove = beatenByP[Math.floor(Math.random() * beatenByP.length)]; }
+            else if (CHEATS.forceLose) { const potentialWinners = Object.keys(MATCHUPS).filter(k => MATCHUPS[k].beats.includes(pMove)); eMove = potentialWinners[Math.floor(Math.random() * potentialWinners.length)]; }
+
+            let res = '', msg = '', dmg = 0;
+            this.log(`You chose ${pMove}...`);
+
+            if (pMove === 'Convince') { await this.performCapture(); return; }
+
+            if (pMove === eMove) {
+                res = 'tie'; msg = "It's a draw!"; await BattleFX.clash();
+            } else if (MATCHUPS[pMove].beats.includes(eMove)) {
+                res = 'win'; await BattleFX.attack(pMove, true);
+                const mult = 1 + (this.combo * 0.5); dmg = Math.floor(this.baseDamage * mult);
+                this.enemyHp -= dmg; BattleFX.showDamage(dmg, false);
+                this.combo++; msg = `${pMove} beats ${eMove}!`;
+            } else {
+                res = 'lose'; await BattleFX.attack(eMove, false);
+                dmg = 10 + Math.floor(Math.random()*5); 
+                this.activeBattler.currentHp -= dmg; BattleFX.showDamage(dmg, true);
+                this.combo = 0; msg = `Ouch! ${eMove} hits you.`;
+            }
+            this.updateUI(msg, res);
+            
+            if (this.enemyHp <= 0) this.end(true);
+            else if (this.activeBattler.currentHp <= 0) this.end(false);
+            else this.toggleControls(true);
+        }
+
+        async performCapture() {
+            this.log("Attempting to Convince...");
+            await BattleFX.attemptStabilize();
+            const healthPercent = this.enemyHp / this.enemyData.maxHp;
+            let chance = (1 - healthPercent) * 0.8; 
+            if (CHEATS.alwaysCatch) chance = 1.5;
+            
+            if (Math.random() < chance) {
+                this.log("Convince Successful!", 'catch');
+                await BattleFX.handleEndGame(true, true);
+                // Auto add to active if room
+                const activeCount = player.collection.filter(c => c.active).length;
+                if (activeCount < 5) this.enemyData.active = true;
+                player.collection.push(this.enemyData);
+                this.end(true, true);
+            } else {
+                this.log("Convince Failed!");
+                this.toggleControls(true);
+                await BattleFX.attack("Rock", false); 
+                this.activeBattler.currentHp -= 10;
+                BattleFX.showDamage(10, true);
+                this.updateUI("The OC broke free and attacked!", 'lose');
+                if (this.activeBattler.currentHp <= 0) this.end(false);
+            }
+        }
+        
+        runAway() {
+            if (!this.active) return; this.active = false;
+            this.log("You fled from battle!");
+            setTimeout(() => {
+                document.getElementById('battle-ui').style.display = 'none';
+                document.getElementById('result-screen').style.display = 'flex';
+                document.getElementById('result-title').innerText = "ESCAPED";
+                document.getElementById('result-title').style.color = "#f39c12";
+                document.getElementById('result-message').innerText = "You got away safely.";
+                document.getElementById('xp-gain-msg').innerText = "No XP gained.";
+            }, 500);
+        }
+        
+        openSwitchMenu() {
+            const modal = document.getElementById('switch-modal');
+            const list = document.getElementById('switch-list');
+            list.innerHTML = '';
+            
+            // Add Player
+            const pOption = document.createElement('div');
+            pOption.className = 'switch-option';
+            if (this.activeBattler === player) pOption.style.opacity = '0.5';
+            
+            let pSrc = usingCustomSprite ? HERO_IMG.src : svgToUrl(generateLatentSVG('#ecf0f1', '#3498db', 'neutral'));
+            if(battleHeroSrc) pSrc = battleHeroSrc;
+            
+            pOption.innerHTML = `<img src="${pSrc}" style="filter:hue-rotate(${player.activeHue}deg)"> <div class="switch-info"><strong>YOU</strong><span class="switch-hp">HP: ${player.currentHp}/${player.maxHp}</span></div>`;
+            if (this.activeBattler !== player && player.currentHp > 0) pOption.onclick = () => this.performSwitch(null);
+            list.appendChild(pOption);
+            
+            // Add Active OCs
+            player.collection.filter(c => c.active).forEach((oc, idx) => {
+                const globalIdx = player.collection.indexOf(oc);
+                const opt = document.createElement('div');
+                opt.className = 'switch-option';
+                if (this.activeBattler === oc) opt.style.opacity = '0.5';
+                
+                // Determine image source
+                let src = ENEMY_IMG.src;
+                if (oc.assignedSlot && CUSTOM_SLOTS[oc.assignedSlot]) src = CUSTOM_SLOTS[oc.assignedSlot];
+                
+                opt.innerHTML = `<img src="${src}" style="filter:hue-rotate(${oc.hue}deg)"> <div class="switch-info"><strong>${oc.name}</strong><span class="switch-hp">HP: ${oc.currentHp}/${oc.maxHp}</span></div>`;
+                
+                if (this.activeBattler !== oc && oc.currentHp > 0) opt.onclick = () => this.performSwitch(globalIdx);
+                list.appendChild(opt);
+            });
+            
+            modal.style.display = 'flex';
+        }
+        
+        async performSwitch(collectionIdx) {
+            document.getElementById('switch-modal').style.display = 'none';
+            this.toggleControls(false);
+            
+            // Swap Logic
+            if (collectionIdx === null) { this.activeBattler = player; this.isPlayerChar = true; }
+            else { this.activeBattler = player.collection[collectionIdx]; this.isPlayerChar = false; }
+            
+            this.updateVisuals();
+            this.log(`Go, ${this.isPlayerChar ? "You" : this.activeBattler.name}!`);
+            
+            // Enemy free hit
+            await new Promise(r => setTimeout(r, 800));
+            await BattleFX.attack("Rock", false);
+            this.activeBattler.currentHp -= 10;
+            BattleFX.showDamage(10, true);
+            this.updateUI("Enemy took advantage of the switch!", 'lose');
+            
+            if (this.activeBattler.currentHp <= 0) this.end(false);
+            else this.toggleControls(true);
+        }
+
+        toggleControls(on) { const btns = document.querySelectorAll('.move-btn'); btns.forEach(b => b.disabled = !on); }
+        log(text, type='') { const log = document.getElementById('battle-log'); log.innerHTML = `<div class="log-entry log-${type}" style="color:#aaa">${text}</div>`; }
+        
+        updateVisuals() {
+            // Update Name & Sprite
+            const heroEl = document.getElementById('battle-hero');
+            document.getElementById('player-name').innerText = this.isPlayerChar ? "YOU" : this.activeBattler.name;
+            
+            if (this.isPlayerChar) {
+                // Player uses battleHeroSrc if avail, else HERO_IMG, else default SVG
+                let src = usingCustomSprite ? HERO_IMG.src : svgToUrl(generateLatentSVG('#ecf0f1', '#3498db', 'neutral'));
+                if (battleHeroSrc) src = battleHeroSrc;
+                renderSpriteToDiv('battle-hero', src, false, `hue-rotate(${player.activeHue}deg)`);
+            } else {
+                // OC uses Enemy Img (or custom slot) + their hue
+                const oc = this.activeBattler;
+                let src = ENEMY_IMG.src;
+                // Add robust check for custom slot data
+                if (oc.assignedSlot && CUSTOM_SLOTS[oc.assignedSlot]) {
+                    src = CUSTOM_SLOTS[oc.assignedSlot];
+                }
+                renderSpriteToDiv('battle-hero', src, false, `hue-rotate(${oc.hue}deg)`);
+            }
+            // Update Enemy Visual (ensure it's correct slot too)
+            let eSrc = ENEMY_IMG.src;
+            if (this.enemyData.assignedSlot && CUSTOM_SLOTS[this.enemyData.assignedSlot]) {
+                eSrc = CUSTOM_SLOTS[this.enemyData.assignedSlot];
+            }
+            renderSpriteToDiv('battle-enemy', eSrc, false, `hue-rotate(${this.enemyData.hue}deg)`);
+            
+            this.updateUI("", "");
+        }
+
+        updateUI(msg, res) {
+            if (msg) this.log(msg, res);
+            const max = this.activeBattler.maxHp || 100; // Safety fallback
+            const cur = Math.max(0, this.activeBattler.currentHp);
+            document.getElementById('player-hp-bar').style.width = (cur / max)*100 + '%';
+            document.getElementById('player-hp-text').innerText = cur + '/' + max;
+            document.getElementById('enemy-hp-bar').style.width = Math.max(0, (this.enemyHp / this.enemyData.maxHp)*100) + '%';
+            document.getElementById('enemy-hp-text').innerText = Math.max(0, this.enemyHp) + '/' + this.enemyData.maxHp;
+            document.getElementById('player-combo').innerText = 'x' + this.combo;
+        }
+
+        async end(win, isCapture = false) {
+            this.active = false;
+            if (!isCapture) await BattleFX.handleEndGame(win);
+            
+            let xpMsg = "";
+            if (win) {
+                const xpGain = 40; player.xp += xpGain; xpMsg = `+${xpGain} XP`;
+                if (player.xp >= player.nextLevelXp) {
+                    player.level++; player.xp -= player.nextLevelXp; player.nextLevelXp = Math.floor(player.nextLevelXp * 1.5);
+                    player.maxHp += 20; player.currentHp = player.maxHp; xpMsg += ` | LEVEL UP! -> ${player.level}`;
+                }
+                if (isCapture) xpMsg += " | NEW DATA ACQUIRED";
+            } else {
+                // Fainted Logic (1 hp)
+                this.activeBattler.currentHp = Math.max(1, this.activeBattler.currentHp);
+                xpMsg = "Convince Failed. Retreating...";
+            }
+            
+            refreshCollectionUI();
+            updateHUD();
+
+            setTimeout(() => {
+                document.getElementById('battle-ui').style.display = 'none';
+                document.getElementById('result-screen').style.display = 'flex';
+                document.getElementById('result-title').innerText = win ? (isCapture?"CONVINCED!":"VICTORY!") : "RETREAT";
+                document.getElementById('result-title').style.color = win ? (isCapture?"#3498db":"#2ecc71") : "#e74c3c";
+                document.getElementById('result-message').innerText = win ? (isCapture? `You convinced ${this.enemyData.name}.` : "You defeated the Wild OC.") : "Run back to safety.";
+                document.getElementById('xp-gain-msg').innerText = xpMsg;
+            }, 500);
+        }
+    }
+
+    function startBattle() {
+        currentState = STATE.BATTLE;
+        battleState = new Battle();
+        document.getElementById('battle-ui').style.display = 'flex';
+        document.getElementById('battle-log').innerHTML = 'A Wild OC appeared!';
+        document.getElementById('battle-controls-area').innerHTML = '';
+        
+        // Setup Enemy Visuals
+        const enemyData = battleState.enemyData;
+        document.getElementById('enemy-name').innerText = enemyData.name;
+        // Logic handled in updateVisuals now
+        
+        // Setup Initial Battler Visuals
+        battleState.updateVisuals();
+        
+        // Sync UI immediately to active battler
+        const activeMax = battleState.activeBattler.maxHp;
+        const activeCur = battleState.activeBattler.currentHp;
+        document.getElementById('player-hp-bar').style.width = (activeCur / activeMax)*100 + '%';
+        document.getElementById('player-hp-text').innerText = activeCur + '/' + activeMax;
+
+        MODES[currentBattleMode].forEach(m => {
+            const btn = document.createElement('button'); btn.className = `move-btn btn-${m.toLowerCase()}`; btn.innerText = m;
+            btn.onclick = () => battleState.resolve(m); document.getElementById('battle-controls-area').appendChild(btn);
+        });
+        
+        const catchBtn = document.createElement('button'); catchBtn.className = 'move-btn btn-catch'; catchBtn.innerText = "CONVINCE";
+        catchBtn.onclick = () => battleState.resolve('Convince'); document.getElementById('battle-controls-area').appendChild(catchBtn);
+        
+        const runBtn = document.createElement('button'); runBtn.className = 'move-btn btn-run'; runBtn.innerText = "RUN";
+        runBtn.onclick = () => battleState.runAway(); document.getElementById('battle-controls-area').appendChild(runBtn);
+        
+        const switchBtn = document.createElement('button'); switchBtn.className = 'move-btn btn-switch'; switchBtn.innerText = "SWITCH OC";
+        switchBtn.onclick = () => battleState.openSwitchMenu(); document.getElementById('battle-controls-area').appendChild(switchBtn);
+
+        battleState.updateUI("","");
+    }
+
+    function returnToOverworld() {
+        document.getElementById('result-screen').style.display = 'none';
+        currentState = STATE.OVERWORLD;
+        CONFIG.scale = userScale;
+        document.querySelectorAll('.fx-element').forEach(e => e.remove());
+        document.getElementById('oc-hud').style.display = 'flex';
+        updateHUD();
+    }
+
+    /* --- COLLECTION UI & HUD --- */
+    let currentRenameIdx = -1;
+
+    function refreshCollectionUI() {
+        const list = document.getElementById('latent-list-container');
+        list.innerHTML = '';
+        if (player.collection.length === 0) { list.innerHTML = '<div style="color:#666; text-align:center;">No data collected.</div>'; return; }
+        
+        player.collection.forEach((oc, idx) => {
+            const item = document.createElement('div');
+            item.className = 'latent-item';
+            
+            const infoDiv = document.createElement('div'); infoDiv.className = 'latent-info';
+            infoDiv.onclick = () => equipLatent(idx); 
+            
+            const badge = document.createElement('div'); badge.className = 'latent-badge'; badge.style.background = `hsl(${oc.hue}, 60%, 50%)`; 
+            const nameSpan = document.createElement('span'); nameSpan.innerText = `${oc.name} (Lvl ${oc.level})`;
+            infoDiv.appendChild(badge); infoDiv.appendChild(nameSpan);
+            
+            const controlsDiv = document.createElement('div');
+            
+            // Slot Selector
+            const slotSelect = document.createElement('select');
+            slotSelect.innerHTML = `<option value="">Default Img</option><option value="A">Slot A</option><option value="B">Slot B</option><option value="C">Slot C</option><option value="D">Slot D</option><option value="E">Slot E</option>`;
+            if (oc.assignedSlot) slotSelect.value = oc.assignedSlot;
+            slotSelect.onclick = (e) => e.stopPropagation();
+            slotSelect.onchange = (e) => { oc.assignedSlot = e.target.value; refreshCollectionUI(); };
+            slotSelect.style.marginRight = '5px';
+            
+            const editBtn = document.createElement('button'); editBtn.className = 'btn-small btn-edit'; editBtn.innerText = 'Edit';
+            editBtn.onclick = (e) => { e.stopPropagation(); openRenameModal(idx); };
+            
+            controlsDiv.appendChild(slotSelect);
+            controlsDiv.appendChild(editBtn);
+            
+            item.appendChild(infoDiv); item.appendChild(controlsDiv);
+            if (player.activeHue === oc.hue) { item.style.background = 'rgba(52, 152, 219, 0.3)'; item.style.border = '1px solid #3498db'; }
+            list.appendChild(item);
+        });
+    }
+    
+    function equipLatent(idx) {
+        const latent = player.collection[idx];
+        player.activeHue = latent.hue;
+        refreshCollectionUI();
+        const p = document.getElementById('hero-preview');
+        if (p.querySelector('img')) p.querySelector('img').style.filter = `hue-rotate(${latent.hue}deg) drop-shadow(0 5px 5px rgba(0,0,0,0.5))`;
+        else if (p.querySelector('svg')) p.querySelector('svg').style.filter = `hue-rotate(${latent.hue}deg)`;
+    }
+    
+    function updateHUD() {
+        const container = document.getElementById('hud-slots'); container.innerHTML = '';
+        const activeMembers = player.collection.filter(c => c.active).slice(0, 5);
+        if (activeMembers.length === 0) { const empty = document.createElement('div'); empty.className = 'oc-icon'; empty.style.borderStyle = 'dashed'; empty.style.opacity = '0.5'; container.appendChild(empty); }
+        activeMembers.forEach(oc => {
+            const icon = document.createElement('div'); icon.className = 'oc-icon';
+            // Use Custom Slot if assigned
+            let src = ENEMY_IMG.src;
+            if (oc.assignedSlot && CUSTOM_SLOTS[oc.assignedSlot]) src = CUSTOM_SLOTS[oc.assignedSlot];
+            
+            icon.innerHTML = `<img src="${src}" style="filter:hue-rotate(${oc.hue}deg)">`;
+            if (oc.isLead) icon.innerHTML += `<div class="lead-star">★</div>`;
+            container.appendChild(icon);
+        });
+    }
+    
+    function toggleTeamDrawer() {
+        const drawer = document.getElementById('team-drawer');
+        const isOpen = drawer.style.display === 'flex';
+        drawer.style.display = isOpen ? 'none' : 'flex';
+        if (!isOpen) renderTeamGrid();
+    }
+    
+    function renderTeamGrid() {
+        const grid = document.getElementById('team-grid'); grid.innerHTML = '';
+        if (player.collection.length === 0) { grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #aaa;">No OCs collected.</div>'; return; }
+        player.collection.forEach((oc, idx) => {
+            const card = document.createElement('div');
+            card.className = `team-member ${oc.active ? 'active' : ''} ${oc.isLead ? 'lead' : ''}`;
+            
+            let src = ENEMY_IMG.src;
+            if (oc.assignedSlot && CUSTOM_SLOTS[oc.assignedSlot]) src = CUSTOM_SLOTS[oc.assignedSlot];
+            
+            card.innerHTML = `<img src="${src}" style="filter:hue-rotate(${oc.hue}deg)"><div class="team-member-name">${oc.name}</div><div class="set-lead-btn" onclick="event.stopPropagation(); setLeadMember(${idx})">★</div>`;
+            card.onclick = () => toggleTeamMember(idx);
+            grid.appendChild(card);
+        });
+    }
+    
+    function toggleTeamMember(idx) {
+        const oc = player.collection[idx];
+        const activeCount = player.collection.filter(c => c.active).length;
+        if (oc.active) oc.active = false;
+        else { if (activeCount >= 5) { alert("Team is full (Max 5). Deselect a member first."); return; } oc.active = true; }
+        renderTeamGrid(); updateHUD();
+    }
+    
+    function setLeadMember(idx) {
+        player.collection.forEach(c => c.isLead = false);
+        player.collection[idx].isLead = true;
+        // Auto-activate lead
+        if (!player.collection[idx].active) toggleTeamMember(idx); 
+        else { renderTeamGrid(); updateHUD(); }
+    }
+    
+    /* --- RENAME MODAL LOGIC --- */
+    function openRenameModal(idx) { currentRenameIdx = idx; document.getElementById('rename-input').value = player.collection[idx].name; document.getElementById('rename-modal').style.display = 'flex'; document.getElementById('rename-input').focus(); }
+    function closeRenameModal() { document.getElementById('rename-modal').style.display = 'none'; currentRenameIdx = -1; }
+    function saveRename() { if (currentRenameIdx === -1) return; const val = document.getElementById('rename-input').value.trim(); if (val) { player.collection[currentRenameIdx].name = val; refreshCollectionUI(); closeRenameModal(); } else alert("Name cannot be empty."); }
+
+    window.addEventListener('keydown', e => { if(e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') movePlayer(0, -1); if(e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') movePlayer(0, 1); if(e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') movePlayer(-1, 0); if(e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') movePlayer(1, 0); });
+    let touchX, touchY;
+    canvas.addEventListener('touchstart', e => { touchX = e.changedTouches[0].screenX; touchY = e.changedTouches[0].screenY; }, {passive:false});
+    canvas.addEventListener('touchend', e => { if(currentState !== STATE.OVERWORLD) return; const dx = e.changedTouches[0].screenX - touchX, dy = e.changedTouches[0].screenY - touchY; if(Math.abs(dx) > Math.abs(dy)) movePlayer(dx > 0 ? 1 : -1, 0); else movePlayer(0, dy > 0 ? 1 : -1); }, {passive:false});
+    function resize() { const c = document.getElementById('game-container'); canvas.width = c.clientWidth; canvas.height = c.clientHeight; }
+    window.addEventListener('resize', resize); resize();
+
+</script>
+</body>
+</html>
