@@ -34,7 +34,7 @@
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none;
             flex-direction: column; justify-content: center; align-items: center;
             background: var(--ui-bg); z-index: 10; padding: 20px; box-sizing: border-box;
-            text-align: center; background-size: cover; background-position: center;
+            text-align: center; background-size: cover; background-position: center; background-repeat: no-repeat;
         }
         
         .overlay-dimmer { position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.85); z-index: -1; }
@@ -164,7 +164,7 @@
 
 <div id="game-container">
     <canvas id="gameCanvas"></canvas>
-    <div class="watermark">LSFC Engine v1.4 | No-API Build</div>
+    <div class="watermark">LSFC Engine v1.6 | No-API Build</div>
 
     <!-- HUD -->
     <div id="oc-hud">
@@ -254,13 +254,13 @@
     <!-- Result Screen -->
     <div id="result-screen" class="overlay" style="z-index:40;">
         <h2 id="result-title" style="font-size:3rem; text-shadow:0 0 20px var(--accent);">VICTORY!</h2>
-        <button class="btn-primary" onclick="Engine.returnToOverworld()">Continue</button>
+        <button id="result-btn" class="btn-primary" onclick="Engine.returnToOverworld()">Continue</button>
     </div>
 </div>
 
 <script>
 /**
- * LATENT SPACE FIGHT CLUB - ENGINE v1.4
+ * LATENT SPACE FIGHT CLUB - ENGINE v1.6
  * Cleaned for specific use: No external AI APIs. All logic is local.
  */
 
@@ -592,15 +592,44 @@ const Engine = {
         State.current = STATE_ENUM.OVERWORLD;
         State.camera.zoom = CONFIG.baseScale;
         document.getElementById('result-screen').style.display = 'none';
+        document.getElementById('result-screen').style.backgroundImage = 'none';
         document.getElementById('battle-ui').style.display = 'none';
         document.getElementById('oc-hud').style.display = 'flex';
         UI.updateHUD();
+    },
+
+    resetGame() {
+        // 1. Reset Player State
+        State.player.x = 7;
+        State.player.y = 7;
+        State.player.currentHp = State.player.maxHp;
+        State.player.collection = []; // Clear caught OCs
+        State.player.activeHue = 0;
+        
+        // 2. Clear UI bindings
+        UI.heroImgSrc = ""; 
+        
+        // 3. Hide all Overlays
+        document.getElementById('result-screen').style.display = 'none';
+        document.getElementById('result-screen').style.backgroundImage = 'none';
+        document.getElementById('battle-ui').style.display = 'none';
+        document.getElementById('oc-hud').style.display = 'none';
+        document.getElementById('team-drawer').style.display = 'none';
+        
+        // 4. Show Start Screen & Re-Init
+        document.getElementById('start-screen').style.display = 'flex';
+        UI.initStartScreen(); // Re-bind clicks just in case
+        
+        // 5. Reset State Enum
+        State.current = STATE_ENUM.START;
     }
 };
 
 /* --- 5. BATTLE SYSTEM (LOGIC) --- */
 const BattleSystem = {
     active: false,
+    isProcessing: false, // New flag to prevent input spam
+    moveTimeout: null, // Track visual timeouts
     enemy: null,
     playerChar: null,
     isPlayerLead: true,
@@ -622,6 +651,7 @@ const BattleSystem = {
         this.isPlayerLead = !lead;
         
         this.active = true;
+        this.isProcessing = false;
         this.setupControls();
         this.updateVisuals();
         UI.log("A wild OC appeared!");
@@ -695,9 +725,14 @@ const BattleSystem = {
     },
 
     async resolveTurn(pMove) {
-        if (!this.active) return; 
+        // Prevent input if already processing a turn
+        if (!this.active || this.isProcessing) return; 
+        this.isProcessing = true;
         this.toggleInput(false);
-        this.hideTooltip(); // Hide immediately on click
+        this.hideTooltip(); 
+
+        // Clear any previous hide timer to prevent UI glitch
+        if (this.moveTimeout) clearTimeout(this.moveTimeout);
 
         const moves = MODES[State.options.mode];
         const eMove = moves[Utils.randomInt(moves.length)];
@@ -728,7 +763,7 @@ const BattleSystem = {
         this.checkWinCondition();
         
         // Hide Player Move Visual after turn
-        setTimeout(() => this.hidePlayerMove(), 500);
+        this.moveTimeout = setTimeout(() => this.hidePlayerMove(), 1500);
     },
 
     showPlayerMove(move) {
@@ -747,7 +782,8 @@ const BattleSystem = {
     },
 
     async attemptCatch() {
-        if (!this.active) return;
+        if (!this.active || this.isProcessing) return;
+        this.isProcessing = true;
         this.toggleInput(false);
         UI.log("Negotiating Terms...");
         
@@ -772,16 +808,38 @@ const BattleSystem = {
     checkWinCondition() {
         if (this.enemy.currentHp <= 0) this.endBattle(true);
         else if (this.playerChar.currentHp <= 0) this.endBattle(false);
-        else this.toggleInput(true);
+        else {
+            this.toggleInput(true);
+            this.isProcessing = false; // Release lock only if battle continues
+        }
     },
 
     endBattle(win, caught=false) {
         this.active = false;
         setTimeout(() => {
+            const screen = document.getElementById('result-screen');
             const title = document.getElementById('result-title');
-            title.innerText = caught ? "PARTNERED!" : (win ? "VICTORY!" : "DEFEATED...");
-            title.style.color = win ? "#2ecc71" : "#e74c3c";
-            document.getElementById('result-screen').style.display = 'flex';
+            const btn = document.getElementById('result-btn');
+            
+            if (win || caught) {
+                // Victory State
+                screen.style.backgroundImage = 'none'; 
+                screen.style.backgroundColor = 'var(--ui-bg)'; 
+                title.innerText = caught ? "PARTNERED!" : "VICTORY!";
+                title.style.color = "#2ecc71";
+                btn.innerText = "Continue";
+                btn.onclick = () => Engine.returnToOverworld();
+            } else {
+                // Defeat State
+                screen.style.backgroundImage = `url(${Utils.resolveAsset('transition_screens/fail_state01.png')})`;
+                screen.style.backgroundColor = '#000'; 
+                title.innerText = "DEFEATED"; 
+                title.style.color = "#e74c3c";
+                btn.innerText = "Return to Title";
+                btn.onclick = () => Engine.resetGame();
+            }
+            
+            screen.style.display = 'flex';
         }, 1000);
     },
 
@@ -810,6 +868,9 @@ const BattleSystem = {
         document.getElementById('player-hp-bar').style.width = pHpPct + '%';
         document.getElementById('enemy-hp-bar').style.width = eHpPct + '%';
         document.getElementById('player-hp-text').innerText = `${Math.ceil(this.playerChar.currentHp)}/${this.playerChar.maxHp}`;
+        
+        // Added missing Enemy HP Text Update
+        document.getElementById('enemy-hp-text').innerText = `${Math.ceil(this.enemy.currentHp)}/${this.enemy.maxHp}`;
         
         if (State.options.showCatchRate) {
             const btn = document.querySelector('.btn-catch');
