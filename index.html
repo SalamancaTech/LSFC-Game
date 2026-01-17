@@ -306,6 +306,7 @@ const State = {
     },
     mapData: [],
     keys: { w: false, a: false, s: false, d: false, shift: false },
+    joystick: { active: false, originX: 0, originY: 0, currentX: 0, currentY: 0, dx: 0, dy: 0 },
     options: { 
         alwaysCatch: false, 
         showCatchRate: false, 
@@ -350,6 +351,11 @@ const Engine = {
         window.addEventListener('keydown', e => { if(e.key.length===1) State.keys[e.key.toLowerCase()] = true; if(e.key==='Shift') State.keys.shift=true; });
         window.addEventListener('keyup', e => { if(e.key.length===1) State.keys[e.key.toLowerCase()] = false; if(e.key==='Shift') State.keys.shift=false; });
 
+        // Touch Handling
+        this.canvas.addEventListener('touchstart', e => this.handleTouchStart(e), {passive: false});
+        this.canvas.addEventListener('touchmove', e => this.handleTouchMove(e), {passive: false});
+        this.canvas.addEventListener('touchend', e => this.handleTouchEnd(e), {passive: false});
+
         // Load Title Screen
         UI.initStartScreen();
     },
@@ -382,6 +388,12 @@ const Engine = {
         let dx = 0, dy = 0;
         if (State.keys.w) dy -= 1; if (State.keys.s) dy += 1; 
         if (State.keys.a) dx -= 1; if (State.keys.d) dx += 1;
+
+        // Joystick Input
+        if (State.joystick.active) {
+            dx += State.joystick.dx;
+            dy += State.joystick.dy;
+        }
 
         if (dx === 0 && dy === 0) return;
 
@@ -488,6 +500,8 @@ const Engine = {
                 );
             }
         }
+
+        this.drawJoystick();
     },
 
     drawPlayer(x, y, w, h) {
@@ -596,6 +610,88 @@ const Engine = {
         document.getElementById('battle-ui').style.display = 'none';
         document.getElementById('oc-hud').style.display = 'flex';
         UI.updateHUD();
+    },
+
+    handleTouchStart(e) {
+        if (State.current !== STATE_ENUM.OVERWORLD) return;
+        e.preventDefault();
+        const touch = e.changedTouches[0];
+        const rect = this.canvas.getBoundingClientRect();
+        const x = touch.clientX - rect.left;
+        const y = touch.clientY - rect.top;
+
+        State.joystick.active = true;
+        State.joystick.originX = x;
+        State.joystick.originY = y;
+        State.joystick.currentX = x;
+        State.joystick.currentY = y;
+        State.joystick.dx = 0;
+        State.joystick.dy = 0;
+    },
+
+    handleTouchMove(e) {
+        if (!State.joystick.active) return;
+        e.preventDefault();
+        const touch = e.changedTouches[0];
+        const rect = this.canvas.getBoundingClientRect();
+        const x = touch.clientX - rect.left;
+        const y = touch.clientY - rect.top;
+
+        const maxRadius = 50;
+        let dx = x - State.joystick.originX;
+        let dy = y - State.joystick.originY;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+
+        if (dist > maxRadius) {
+            const ratio = maxRadius / dist;
+            dx *= ratio;
+            dy *= ratio;
+            State.joystick.currentX = State.joystick.originX + dx;
+            State.joystick.currentY = State.joystick.originY + dy;
+        } else {
+            State.joystick.currentX = x;
+            State.joystick.currentY = y;
+        }
+
+        if (dist < 10) { // Deadzone
+            State.joystick.dx = 0;
+            State.joystick.dy = 0;
+        } else {
+            State.joystick.dx = dx / maxRadius;
+            State.joystick.dy = dy / maxRadius;
+        }
+    },
+
+    handleTouchEnd(e) {
+         State.joystick.active = false;
+         State.joystick.dx = 0;
+         State.joystick.dy = 0;
+    },
+
+    drawJoystick() {
+        if (!State.joystick.active) return;
+
+        const { originX, originY, currentX, currentY } = State.joystick;
+        const maxRadius = 50;
+
+        this.ctx.save();
+
+        // Base
+        this.ctx.beginPath();
+        this.ctx.arc(originX, originY, maxRadius, 0, Math.PI * 2);
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+        this.ctx.fill();
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        this.ctx.lineWidth = 2;
+        this.ctx.stroke();
+
+        // Stick
+        this.ctx.beginPath();
+        this.ctx.arc(currentX, currentY, 20, 0, Math.PI * 2);
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        this.ctx.fill();
+
+        this.ctx.restore();
     },
 
     resetGame() {
